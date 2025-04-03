@@ -6,7 +6,8 @@ It was vibe coded using ChatGPT o3 model.
 - 🔍 **Query resolvers** for fetching data  
 - 🛠️ **Mutation resolvers** for updating data  
 - 📡 **Subscription resolvers** for real-time updates  
-- 🧵 Thread-safe in-memory data handling  
+- 🧵 Thread-safe in-memory data handling
+- multiple files uploader
 - 🔌 Simple HTTP handler integration (`/graphql` and `/subscriptions`)  
 
 ---
