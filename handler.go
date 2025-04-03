@@ -154,8 +154,13 @@ func buildValue(val *Value, variables map[string]interface{}) interface{} {
 			m[key] = buildValue(fieldVal, variables)
 		}
 		return m
+	case "Array":
+		arr := []interface{}{}
+		for _, elem := range val.List {
+			arr = append(arr, buildValue(elem, variables))
+		}
+		return arr
 	default:
-		// Fallback for Enum or other types.
 		return val.Literal
 	}
 }

@@ -191,11 +191,28 @@ func (p *Parser) parseObject() *Value {
 	}
 }
 
+func (p *Parser) parseArray() *Value {
+	arr := []*Value{}
+	p.nextToken() // skip '['
+	for p.curToken.Type != RBRACKET && p.curToken.Type != EOF {
+		val := p.parseValue()
+		arr = append(arr, val)
+		if p.curToken.Type == COMMA {
+			p.nextToken()
+		}
+	}
+	p.nextToken() // skip ']'
+	return &Value{Kind: "Array", List: arr}
+}
+
 // Update parseValue to handle objects.
 func (p *Parser) parseValue() *Value {
 	// If the current token indicates the start of an object literal.
 	if p.curToken.Type == LBRACE {
 		return p.parseObject()
+	}
+	if p.curToken.Type == LBRACKET {
+		return p.parseArray()
 	}
 
 	val := &Value{}

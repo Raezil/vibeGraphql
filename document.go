@@ -75,9 +75,10 @@ func (a *Argument) TokenLiteral() string {
 }
 
 type Value struct {
-	Kind         string // "Int", "String", "Boolean", "Variable", "Enum"
+	Kind         string // "Int", "String", "Boolean", "Variable", "Enum", "Object", "Array"
 	Literal      string
 	ObjectFields map[string]*Value // for nested object values (if Kind == "Object")
+	List         []*Value          // for array values (if Kind == "Array")
 }
 
 func (v *Value) TokenLiteral() string {
