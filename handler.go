@@ -368,83 +368,77 @@ func SubscriptionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // GraphqlUploadHandler supports both regular JSON GraphQL requests and multipart uploads.
+// GraphqlUploadHandler handles multipart/form-data requests for file uploads.
 func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
-	// Check if the request is multipart (i.e. contains file uploads).
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-		// Limit the size to, for example, 32 MB.
-		err := r.ParseMultipartForm(32 << 20)
-		if err != nil {
-			http.Error(w, "failed to parse multipart form", http.StatusBadRequest)
-			return
-		}
-		// The "operations" field should contain the GraphQL query and variables.
-		operations := r.FormValue("operations")
-		if operations == "" {
-			http.Error(w, "missing operations field", http.StatusBadRequest)
-			return
-		}
-
-		// Parse the operations JSON.
-		var req struct {
-			Query     string                 `json:"query"`
-			Variables map[string]interface{} `json:"variables"`
-		}
-		if err := json.Unmarshal([]byte(operations), &req); err != nil {
-			http.Error(w, "invalid operations JSON", http.StatusBadRequest)
-			return
-		}
-
-		// The "map" field tells which file corresponds to which variable paths.
-		fileMapStr := r.FormValue("map")
-		if fileMapStr == "" {
-			http.Error(w, "missing map field", http.StatusBadRequest)
-			return
-		}
-		var fileMap map[string][]string
-		if err := json.Unmarshal([]byte(fileMapStr), &fileMap); err != nil {
-			http.Error(w, "invalid map JSON", http.StatusBadRequest)
-			return
-		}
-
-		// For each file, retrieve it and inject its value into the variables.
-		for fileKey, paths := range fileMap {
-			file, header, err := r.FormFile(fileKey)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("failed to retrieve file %s: %v", fileKey, err), http.StatusBadRequest)
-				return
-			}
-			defer file.Close()
-			fileData, err := ioutil.ReadAll(file)
-			if err != nil {
-				http.Error(w, "failed to read file", http.StatusInternalServerError)
-				return
-			}
-			// Insert the file data (or a struct with file info) into each variable location.
-			for _, path := range paths {
-				// For example, you can store a map with the filename and content.
-				setNestedValue(req.Variables, path, map[string]interface{}{
-					"filename": header.Filename,
-					"data":     fileData,
-				})
-			}
-		}
-
-		// Now that req.Variables has been updated with file data, execute the GraphQL query.
-		lexer := NewLexer(req.Query)
-		parser := NewParser(lexer)
-		doc := parser.ParseDocument()
-		result, err := executeDocument(doc, req.Variables)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		GraphqlHandler(w, r)
 		return
 	}
-
-	// Fallback: if not multipart, handle as a regular GraphQL JSON request.
-	GraphqlHandler(w, r)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "failed to parse multipart form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	operations := r.FormValue("operations")
+	if operations == "" {
+		http.Error(w, "missing operations field", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Query     string                 `json:"query"`
+		Variables map[string]interface{} `json:"variables"`
+	}
+	if err := json.Unmarshal([]byte(operations), &req); err != nil {
+		http.Error(w, "invalid operations JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Variables == nil {
+		req.Variables = make(map[string]interface{})
+	}
+	fileMapStr := r.FormValue("map")
+	if fileMapStr == "" {
+		http.Error(w, "missing map field", http.StatusBadRequest)
+		return
+	}
+	var fileMap map[string][]string
+	if err := json.Unmarshal([]byte(fileMapStr), &fileMap); err != nil {
+		http.Error(w, "invalid map JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Process each file and inject into variables.
+	for fileKey, paths := range fileMap {
+		file, header, err := r.FormFile(fileKey)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to retrieve file %s: %v", fileKey, err), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		fileData, err := ioutil.ReadAll(file)
+		if err != nil {
+			http.Error(w, "failed to read file: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		for _, path := range paths {
+			// If the path starts with "variables.", remove that prefix.
+			adjustedPath := path
+			if strings.HasPrefix(path, "variables.") {
+				adjustedPath = strings.TrimPrefix(path, "variables.")
+			}
+			setNestedValue(req.Variables, adjustedPath, map[string]interface{}{
+				"filename": header.Filename,
+				"data":     fileData,
+			})
+		}
+	}
+	lexer := NewLexer(req.Query)
+	parser := NewParser(lexer)
+	doc := parser.ParseDocument()
+	result, err := executeDocument(doc, req.Variables)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 // setNestedValue assigns the given value into the nested map structure of vars based on the dot-separated path.
@@ -456,7 +450,6 @@ func setNestedValue(vars map[string]interface{}, path string, value interface{})
 		if i == len(keys)-1 {
 			current[key] = value
 		} else {
-			// If the key does not exist or is not a map, create it.
 			if next, ok := current[key].(map[string]interface{}); ok {
 				current = next
 			} else {
