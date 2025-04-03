@@ -371,18 +371,16 @@ func SubscriptionHandler(w http.ResponseWriter, r *http.Request) {
 
 // GraphqlUploadHandler supports both regular JSON GraphQL requests and multipart uploads.
 // GraphqlUploadHandler handles multipart/form-data requests for file uploads.
+
 func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
-	// If not a multipart request, fall back to standard GraphQL handler.
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 		GraphqlHandler(w, r)
 		return
 	}
-	// Parse the multipart form with a limit (e.g., 32MB).
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, "failed to parse multipart form: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	// Get the "operations" field.
 	operations := r.FormValue("operations")
 	if operations == "" {
 		http.Error(w, "missing operations field", http.StatusBadRequest)
@@ -399,7 +397,6 @@ func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Variables == nil {
 		req.Variables = make(map[string]interface{})
 	}
-	// Get the "map" field, which maps form file keys to variable paths.
 	fileMapStr := r.FormValue("map")
 	if fileMapStr == "" {
 		http.Error(w, "missing map field", http.StatusBadRequest)
@@ -411,7 +408,6 @@ func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Process files concurrently.
 	var wg sync.WaitGroup
 	var varMu sync.Mutex
 
@@ -430,13 +426,23 @@ func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
 				log.Printf("failed to read file %s: %v", header.Filename, err)
 				return
 			}
-			// Log file details.
 			log.Printf("Uploaded file %q with %d bytes", header.Filename, len(fileData))
-			// For each variable path mapped to this file, inject the file data.
 			for _, path := range paths {
 				// Remove the "variables." prefix if present.
 				adjustedPath := strings.TrimPrefix(path, "variables.")
 				varMu.Lock()
+				// If the path contains a dot and the second part is numeric, update as an array.
+				parts := strings.Split(adjustedPath, ".")
+				if len(parts) == 2 {
+					if _, err := strconv.Atoi(parts[1]); err == nil {
+						setNestedArrayValue(req.Variables, adjustedPath, map[string]interface{}{
+							"filename": header.Filename,
+							"data":     fileData,
+						})
+						varMu.Unlock()
+						continue
+					}
+				}
 				setNestedValue(req.Variables, adjustedPath, map[string]interface{}{
 					"filename": header.Filename,
 					"data":     fileData,
@@ -447,7 +453,7 @@ func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 
-	// Continue with regular GraphQL processing.
+	// Continue processing the GraphQL query.
 	lexer := NewLexer(req.Query)
 	parser := NewParser(lexer)
 	doc := parser.ParseDocument()
@@ -460,21 +466,53 @@ func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// setNestedValue injects the value into a nested map using a dot-separated path.
+// setNestedValue is used for updating nested maps (non-array paths).
 func setNestedValue(vars map[string]interface{}, path string, value interface{}) {
 	keys := strings.Split(path, ".")
 	current := vars
 	for i, key := range keys {
 		if i == len(keys)-1 {
 			current[key] = value
-		} else {
-			if next, ok := current[key].(map[string]interface{}); ok {
-				current = next
-			} else {
-				newMap := make(map[string]interface{})
-				current[key] = newMap
-				current = newMap
-			}
+			return
 		}
+		if next, ok := current[key].(map[string]interface{}); ok {
+			current = next
+		} else {
+			newMap := make(map[string]interface{})
+			current[key] = newMap
+			current = newMap
+		}
+	}
+}
+
+// setNestedArrayValue updates an array element given a path like "files.0".
+func setNestedArrayValue(vars map[string]interface{}, path string, value interface{}) {
+	// Expecting a two-part path: e.g. "files.0"
+	parts := strings.Split(path, ".")
+	if len(parts) != 2 {
+		// Fallback to the regular setter if not the expected format.
+		setNestedValue(vars, path, value)
+		return
+	}
+	arrayKey := parts[0]
+	idx, err := strconv.Atoi(parts[1])
+	if err != nil {
+		setNestedValue(vars, path, value)
+		return
+	}
+	if arr, ok := vars[arrayKey].([]interface{}); ok {
+		// Extend the slice if needed.
+		if idx >= len(arr) {
+			newArr := make([]interface{}, idx+1)
+			copy(newArr, arr)
+			arr = newArr
+			vars[arrayKey] = arr
+		}
+		arr[idx] = value
+	} else {
+		// If not an array, create one.
+		newArr := make([]interface{}, idx+1)
+		newArr[idx] = value
+		vars[arrayKey] = newArr
 	}
 }
