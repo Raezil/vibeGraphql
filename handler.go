@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -370,14 +372,17 @@ func SubscriptionHandler(w http.ResponseWriter, r *http.Request) {
 // GraphqlUploadHandler supports both regular JSON GraphQL requests and multipart uploads.
 // GraphqlUploadHandler handles multipart/form-data requests for file uploads.
 func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
+	// If not a multipart request, fall back to standard GraphQL handler.
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 		GraphqlHandler(w, r)
 		return
 	}
+	// Parse the multipart form with a limit (e.g., 32MB).
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, "failed to parse multipart form: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Get the "operations" field.
 	operations := r.FormValue("operations")
 	if operations == "" {
 		http.Error(w, "missing operations field", http.StatusBadRequest)
@@ -394,6 +399,7 @@ func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Variables == nil {
 		req.Variables = make(map[string]interface{})
 	}
+	// Get the "map" field, which maps form file keys to variable paths.
 	fileMapStr := r.FormValue("map")
 	if fileMapStr == "" {
 		http.Error(w, "missing map field", http.StatusBadRequest)
@@ -404,31 +410,44 @@ func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid map JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	// Process each file and inject into variables.
+
+	// Process files concurrently.
+	var wg sync.WaitGroup
+	var varMu sync.Mutex
+
 	for fileKey, paths := range fileMap {
-		file, header, err := r.FormFile(fileKey)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to retrieve file %s: %v", fileKey, err), http.StatusBadRequest)
-			return
-		}
-		defer file.Close()
-		fileData, err := ioutil.ReadAll(file)
-		if err != nil {
-			http.Error(w, "failed to read file: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		for _, path := range paths {
-			// If the path starts with "variables.", remove that prefix.
-			adjustedPath := path
-			if strings.HasPrefix(path, "variables.") {
-				adjustedPath = strings.TrimPrefix(path, "variables.")
+		wg.Add(1)
+		go func(fileKey string, paths []string) {
+			defer wg.Done()
+			file, header, err := r.FormFile(fileKey)
+			if err != nil {
+				log.Printf("failed to retrieve file %s: %v", fileKey, err)
+				return
 			}
-			setNestedValue(req.Variables, adjustedPath, map[string]interface{}{
-				"filename": header.Filename,
-				"data":     fileData,
-			})
-		}
+			defer file.Close()
+			fileData, err := ioutil.ReadAll(file)
+			if err != nil {
+				log.Printf("failed to read file %s: %v", header.Filename, err)
+				return
+			}
+			// Log file details.
+			log.Printf("Uploaded file %q with %d bytes", header.Filename, len(fileData))
+			// For each variable path mapped to this file, inject the file data.
+			for _, path := range paths {
+				// Remove the "variables." prefix if present.
+				adjustedPath := strings.TrimPrefix(path, "variables.")
+				varMu.Lock()
+				setNestedValue(req.Variables, adjustedPath, map[string]interface{}{
+					"filename": header.Filename,
+					"data":     fileData,
+				})
+				varMu.Unlock()
+			}
+		}(fileKey, paths)
 	}
+	wg.Wait()
+
+	// Continue with regular GraphQL processing.
 	lexer := NewLexer(req.Query)
 	parser := NewParser(lexer)
 	doc := parser.ParseDocument()
@@ -441,8 +460,7 @@ func GraphqlUploadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// setNestedValue assigns the given value into the nested map structure of vars based on the dot-separated path.
-// For example, path "input.file" will set vars["input"]["file"] = value.
+// setNestedValue injects the value into a nested map using a dot-separated path.
 func setNestedValue(vars map[string]interface{}, path string, value interface{}) {
 	keys := strings.Split(path, ".")
 	current := vars
