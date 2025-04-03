@@ -47,12 +47,15 @@ Here is a full example using `vibeGraphql`:
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	graphql "github.com/Raezil/vibeGraphql"
@@ -191,20 +194,46 @@ func uploadFilesResolver(source interface{}, args map[string]interface{}) (inter
 }
 
 func main() {
-	// Register resolvers.
 	graphql.RegisterQueryResolver("user", userResolver)
 	graphql.RegisterQueryResolver("users", usersResolver)
 	graphql.RegisterMutationResolver("updateUser", updateUserResolver)
-	// Register the file upload resolver.
 	graphql.RegisterMutationResolver("uploadFiles", uploadFilesResolver)
 	graphql.RegisterSubscriptionResolver("userSubscription", userSubscriptionResolver)
 
 	// Use the GraphqlUploadHandler for /graphql to support file uploads.
-	http.HandleFunc("/graphql", graphql.GraphqlUploadHandler)
-	http.HandleFunc("/subscriptions", graphql.SubscriptionHandler)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", graphql.GraphqlUploadHandler)
+	mux.HandleFunc("/subscriptions", graphql.SubscriptionHandler)
 
-	fmt.Println("GraphQL server is running on http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+
+	// Graceful shutdown setup
+	go func() {
+		fmt.Println("GraphQL server is running on http://localhost:8080")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Could not listen on :8080: %v\n", err)
+		}
+	}()
+
+	// Listen for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	fmt.Println("\nShutting down server...")
+
+	// Context for graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	fmt.Println("Server exiting")
 }
 ```
 
