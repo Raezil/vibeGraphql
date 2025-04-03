@@ -50,6 +50,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -150,26 +151,42 @@ func userSubscriptionResolver(source interface{}, args map[string]interface{}) (
 }
 
 // UploadFileResolver is the mutation resolver that accepts a file upload.
-func UploadFileResolver(source interface{}, args map[string]interface{}) (interface{}, error) {
-	fileData, ok := args["file"].(map[string]interface{})
+// uploadFilesResolver handles multiple file uploads.
+// It expects the "files" argument to be an array of file objects,
+// where each file object is a map with "filename" and "data" keys.
+// uploadFilesResolver handles multiple file uploads.
+// It expects the "files" argument to be an array of file objects.
+func uploadFilesResolver(source interface{}, args map[string]interface{}) (interface{}, error) {
+	rawFiles, ok := args["files"].([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("file argument not found or invalid")
+		return nil, fmt.Errorf("files argument not found or invalid")
 	}
-	filename, ok := fileData["filename"].(string)
-	if !ok {
-		return nil, fmt.Errorf("filename not provided")
+	targetDir := "./tmp"
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory %q: %v", targetDir, err)
 	}
-	rawBytes, ok := fileData["data"].([]byte)
-	if !ok {
-		return nil, fmt.Errorf("file data not provided")
+	var results []string
+	for idx, raw := range rawFiles {
+		fileData, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("file at index %d is invalid", idx)
+		}
+		filename, ok := fileData["filename"].(string)
+		if !ok {
+			return nil, fmt.Errorf("filename not provided for file at index %d", idx)
+		}
+		data, ok := fileData["data"].([]byte)
+		if !ok {
+			return nil, fmt.Errorf("file data not provided for file %q", filename)
+		}
+		filepath := fmt.Sprintf("%s/%s", targetDir, filename)
+		if err := ioutil.WriteFile(filepath, data, 0644); err != nil {
+			return nil, fmt.Errorf("failed to save file %q: %v", filename, err)
+		}
+		log.Printf("uploadFilesResolver: Received file %q with %d bytes", filename, len(data))
+		results = append(results, fmt.Sprintf("Uploaded file %q (%d bytes)", filename, len(data)))
 	}
-	// Log file content
-	log.Printf("UploadFileResolver: received file %q (%d bytes)", filename, len(rawBytes))
-	ioutil.WriteFile("./tmp/"+filename, rawBytes, 0644)
-	// (Optional) You could save the file to disk or perform further processing.
-	// Example: ioutil.WriteFile("/tmp/"+filename, rawBytes, 0644)
-
-	return fmt.Sprintf("Received file %q with %d bytes", filename, len(rawBytes)), nil
+	return results, nil
 }
 
 func main() {
@@ -178,7 +195,7 @@ func main() {
 	graphql.RegisterQueryResolver("users", usersResolver)
 	graphql.RegisterMutationResolver("updateUser", updateUserResolver)
 	// Register the file upload resolver.
-	graphql.RegisterMutationResolver("uploadFile", UploadFileResolver)
+	graphql.RegisterMutationResolver("uploadFiles", uploadFilesResolver)
 	graphql.RegisterSubscriptionResolver("userSubscription", userSubscriptionResolver)
 
 	// Use the GraphqlUploadHandler for /graphql to support file uploads.
@@ -188,7 +205,6 @@ func main() {
 	fmt.Println("GraphQL server is running on http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
-
 ```
 
 ## 💬 Contributing
