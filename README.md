@@ -57,7 +57,7 @@ import (
 	"sync"
 	"time"
 
-	"graphql" // import your GraphQL package that includes resolvers and handlers
+	graphql "github.com/Raezil/vibeGraphql" // import your GraphQL package that includes resolvers and handlers
 )
 
 // User represents a sample user.
