@@ -45,6 +45,8 @@ func (v *VariableDefinition) TokenLiteral() string {
 type Type struct {
 	Name    string
 	NonNull bool
+	IsList  bool  // Indicates if the type is a list
+	Elem    *Type // The element type if IsList is true
 }
 
 type SelectionSet struct {

@@ -67,10 +67,10 @@ func (p *Parser) parseOperationDefinition() *OperationDefinition {
 
 func (p *Parser) parseVariableDefinitions() []VariableDefinition {
 	var vars []VariableDefinition
-	p.nextToken() // skip '('
+	p.nextToken() // Skip '('
 	for p.curToken.Type != RPAREN && p.curToken.Type != EOF {
 		if p.curToken.Type == DOLLAR {
-			p.nextToken() // skip '$'
+			p.nextToken() // Skip '$'
 			if p.curToken.Type != IDENT {
 				return vars
 			}
@@ -79,13 +79,9 @@ func (p *Parser) parseVariableDefinitions() []VariableDefinition {
 			p.nextToken()
 			if p.curToken.Type == COLON {
 				p.nextToken()
-				if p.curToken.Type == IDENT {
-					varDef.Type.Name = p.curToken.Literal
-					p.nextToken()
-					if p.curToken.Type == BANG {
-						varDef.Type.NonNull = true
-						p.nextToken()
-					}
+				typeParsed := p.parseType()
+				if typeParsed != nil {
+					varDef.Type = *typeParsed
 				}
 			}
 			vars = append(vars, varDef)
@@ -94,7 +90,7 @@ func (p *Parser) parseVariableDefinitions() []VariableDefinition {
 			p.nextToken()
 		}
 	}
-	p.nextToken() // skip ')'
+	p.nextToken() // Skip ')'
 	return vars
 }
 
@@ -252,4 +248,35 @@ func (p *Parser) parseValue() *Value {
 		p.nextToken()
 	}
 	return val
+}
+
+func (p *Parser) parseType() *Type {
+	var t Type
+	if p.curToken.Type == LBRACKET {
+		// This is a list type.
+		p.nextToken()              // Skip '['
+		innerType := p.parseType() // Recursively parse the inner type.
+		t = Type{IsList: true, Elem: innerType}
+		if p.curToken.Type != RBRACKET {
+			// Handle error: expected closing bracket.
+		}
+		p.nextToken() // Skip ']'
+		// Check for non-null on the list type.
+		if p.curToken.Type == BANG {
+			t.NonNull = true
+			p.nextToken()
+		}
+		return &t
+	} else if p.curToken.Type == IDENT {
+		// Basic type.
+		t = Type{Name: p.curToken.Literal}
+		p.nextToken()
+		// Check for non-null on the basic type.
+		if p.curToken.Type == BANG {
+			t.NonNull = true
+			p.nextToken()
+		}
+		return &t
+	}
+	return nil
 }
