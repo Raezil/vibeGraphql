@@ -1,8 +1,3 @@
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/01b920ab-36b5-4ce3-9510-6ba9ffc4000a" alt="centered image">
-</p>
-
-
 **vibeGraphql** is a minimalistic GraphQL library for Go that supports **queries**, **mutations**, and **subscriptions** with a clean and intuitive API. 
 It was vibe coded using ChatGPT o3 model.
 
