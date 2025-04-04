@@ -111,18 +111,24 @@ func (p *Parser) skipTypeDefinition() {
 func (p *Parser) skipBlock() {
 	// Assume the current token is LBRACE.
 	depth := 0
+	iterations := 0
+	maxIterations := 10000 // safeguard to prevent infinite loop
 	for p.curToken.Type != EOF {
+		if iterations > maxIterations {
+			// Break out if we've looped too many times.
+			break
+		}
 		if p.curToken.Type == LBRACE {
 			depth++
 		} else if p.curToken.Type == RBRACE {
 			depth--
 			if depth == 0 {
-				// Move past the closing brace and exit.
-				p.nextToken()
+				p.nextToken() // Move past the closing brace.
 				return
 			}
 		}
 		p.nextToken()
+		iterations++
 	}
 }
 
