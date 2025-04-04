@@ -344,3 +344,178 @@ func TestParseType(t *testing.T) {
 		}
 	}
 }
+
+// TestParser_ImplicitQuery verifies that an implicit query (starting with '{')
+// is correctly parsed as a query operation with a selection set.
+func TestParser_ImplicitQuery(t *testing.T) {
+	input := `{ hello world }`
+	l := NewLexer(input)
+	p := NewParser(l)
+	doc := p.ParseDocument()
+	if len(doc.Definitions) != 1 {
+		t.Fatalf("expected one definition, got %d", len(doc.Definitions))
+	}
+	op, ok := doc.Definitions[0].(*OperationDefinition)
+	if !ok {
+		t.Fatalf("expected OperationDefinition, got %T", doc.Definitions[0])
+	}
+	if op.Operation != "query" {
+		t.Errorf("expected implicit operation to be 'query', got %s", op.Operation)
+	}
+	// Expect two fields: "hello" and "world"
+	if op.SelectionSet == nil {
+		t.Fatal("expected a selection set")
+	}
+	if len(op.SelectionSet.Selections) != 2 {
+		t.Errorf("expected 2 selections, got %d", len(op.SelectionSet.Selections))
+	}
+	fieldNames := []string{}
+	for _, sel := range op.SelectionSet.Selections {
+		if f, ok := sel.(*Field); ok {
+			fieldNames = append(fieldNames, f.Name)
+		}
+	}
+	expected := []string{"hello", "world"}
+	for i, exp := range expected {
+		if fieldNames[i] != exp {
+			t.Errorf("expected field %d to be %q, got %q", i, exp, fieldNames[i])
+		}
+	}
+}
+
+// TestParser_ParseValue_Invalid checks that parseValue produces an Illegal value
+// when encountering an unrecognized token.
+func TestParser_ParseValue_Invalid(t *testing.T) {
+	input := `@invalid`
+	l := NewLexer(input)
+	p := NewParser(l)
+	val := p.parseValue()
+	if val.Kind != "Illegal" {
+		t.Errorf("expected Kind 'Illegal', got %q", val.Kind)
+	}
+	if val.Literal != "@" {
+		t.Errorf("expected literal '@', got %q", val.Literal)
+	}
+}
+
+// TestParser_ParseIncompleteObject tests behavior when an object literal is missing its closing brace.
+func TestParser_ParseIncompleteObject(t *testing.T) {
+	input := `{ key: "value"`
+	l := NewLexer(input)
+	p := NewParser(l)
+	val := p.parseValue()
+	if val.Kind != "Object" {
+		t.Fatalf("expected Kind 'Object', got %q", val.Kind)
+	}
+	if _, ok := val.ObjectFields["key"]; !ok {
+		t.Errorf("expected object to have key 'key'")
+	}
+	// Depending on error handling, the parser may simply return what it read.
+}
+
+// TestParser_ParseVariableWithoutIdentifier checks that a variable token with no identifier
+// after '$' is handled as a Variable with an empty literal.
+func TestParser_ParseVariableWithoutIdentifier(t *testing.T) {
+	input := `$`
+	l := NewLexer(input)
+	p := NewParser(l)
+	val := p.parseValue()
+	if val.Kind != "Variable" {
+		t.Errorf("expected Kind 'Variable', got %q", val.Kind)
+	}
+	if val.Literal != "" {
+		t.Errorf("expected empty literal for variable, got %q", val.Literal)
+	}
+}
+
+// TestParser_NestedArrayInObject tests parsing of an object that contains an array and a nested object.
+func TestParser_NestedArrayInObject(t *testing.T) {
+	input := `{ items: [1, 2, 3], info: { name: "test" } }`
+	l := NewLexer(input)
+	p := NewParser(l)
+	val := p.parseValue()
+	if val.Kind != "Object" {
+		t.Fatalf("expected Kind 'Object', got %q", val.Kind)
+	}
+	items, ok := val.ObjectFields["items"]
+	if !ok {
+		t.Fatalf("expected key 'items' in object")
+	}
+	if items.Kind != "Array" {
+		t.Errorf("expected 'items' to be Array, got %q", items.Kind)
+	}
+	if len(items.List) != 3 {
+		t.Errorf("expected array length 3, got %d", len(items.List))
+	}
+	info, ok := val.ObjectFields["info"]
+	if !ok {
+		t.Fatalf("expected key 'info' in object")
+	}
+	if info.Kind != "Object" {
+		t.Errorf("expected 'info' to be Object, got %q", info.Kind)
+	}
+	nameField, ok := info.ObjectFields["name"]
+	if !ok || nameField.Literal != "test" {
+		t.Errorf("expected 'info.name' to be 'test', got %q", nameField.Literal)
+	}
+}
+
+// TestParser_ComplexTypeDefinition checks that a complex type definition
+// with multiple fields, list types, and nested object types is parsed correctly.
+func TestParser_ComplexTypeDefinition(t *testing.T) {
+	input := `
+		type Complex {
+			id: ID!,
+			names: [String!]!,
+			meta: Meta
+		}
+	`
+	l := NewLexer(input)
+	p := NewParser(l)
+	doc := p.ParseDocument()
+	if len(doc.Definitions) != 1 {
+		t.Fatalf("expected 1 definition, got %d", len(doc.Definitions))
+	}
+	td, ok := doc.Definitions[0].(*TypeDefinition)
+	if !ok {
+		t.Fatalf("expected TypeDefinition, got %T", doc.Definitions[0])
+	}
+	if td.Name != "Complex" {
+		t.Errorf("expected type name 'Complex', got %s", td.Name)
+	}
+	if len(td.Fields) != 3 {
+		t.Errorf("expected 3 fields, got %d", len(td.Fields))
+	}
+	if td.Fields[0].Name != "id" {
+		t.Errorf("expected first field to be 'id', got %s", td.Fields[0].Name)
+	}
+	if td.Fields[1].Name != "names" {
+		t.Errorf("expected second field to be 'names', got %s", td.Fields[1].Name)
+	}
+	if td.Fields[2].Name != "meta" {
+		t.Errorf("expected third field to be 'meta', got %s", td.Fields[2].Name)
+	}
+}
+
+// TestParser_ParseBooleanValue verifies that boolean literals are correctly recognized.
+func TestParser_ParseBooleanValue(t *testing.T) {
+	input := `true false`
+	l := NewLexer(input)
+	p := NewParser(l)
+	// Parse first boolean.
+	val1 := p.parseValue()
+	if val1.Kind != "Boolean" {
+		t.Errorf("expected Kind 'Boolean' for true, got %q", val1.Kind)
+	}
+	if val1.Literal != "true" {
+		t.Errorf("expected literal 'true', got %q", val1.Literal)
+	}
+	// Parse second boolean.
+	val2 := p.parseValue()
+	if val2.Kind != "Boolean" {
+		t.Errorf("expected Kind 'Boolean' for false, got %q", val2.Kind)
+	}
+	if val2.Literal != "false" {
+		t.Errorf("expected literal 'false', got %q", val2.Literal)
+	}
+}

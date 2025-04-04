@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestResolveArgument_Variable_Found(t *testing.T) {
@@ -178,5 +180,100 @@ func TestGraphqlUploadHandler_Success(t *testing.T) {
 	// Expect 200 OK since the query resolves correctly.
 	if res.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", res.StatusCode)
+	}
+}
+
+// TestSetNestedValue verifies that setNestedValue properly updates a nested map.
+func TestSetNestedValue(t *testing.T) {
+	vars := make(map[string]interface{})
+	setNestedValue(vars, "a.b", "nestedValue")
+	m, ok := vars["a"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected key 'a' to be a map, got %T", vars["a"])
+	}
+	if m["b"] != "nestedValue" {
+		t.Errorf("expected nested value 'nestedValue', got %v", m["b"])
+	}
+}
+
+// TestSetNestedArrayValue verifies that setNestedArrayValue correctly creates or extends an array.
+func TestSetNestedArrayValue(t *testing.T) {
+	vars := make(map[string]interface{})
+	// Set an element at index 0.
+	setNestedArrayValue(vars, "files.0", "file0")
+	arr, ok := vars["files"].([]interface{})
+	if !ok {
+		t.Fatalf("expected key 'files' to be an array, got %T", vars["files"])
+	}
+	if len(arr) != 1 || arr[0] != "file0" {
+		t.Errorf("expected array with ['file0'], got %v", arr)
+	}
+
+	// Extend the array to index 2.
+	setNestedArrayValue(vars, "files.2", "file2")
+	arr, ok = vars["files"].([]interface{})
+	if !ok || len(arr) < 3 {
+		t.Fatalf("expected array of length at least 3, got %v", vars["files"])
+	}
+	if arr[2] != "file2" {
+		t.Errorf("expected element at index 2 to be 'file2', got %v", arr[2])
+	}
+}
+
+// TestGraphqlUploadHandler_MissingOperations verifies that GraphqlUploadHandler returns an error
+// when the "operations" field is missing in a multipart upload.
+func TestGraphqlUploadHandler_MissingOperations(t *testing.T) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	// Omit operations field.
+	writer.WriteField("map", `{"file1": ["variables.file"]}`)
+	part, err := writer.CreateFormFile("file1", "dummy.txt")
+	if err != nil {
+		t.Fatalf("failed to create form file: %v", err)
+	}
+	part.Write([]byte("dummy content"))
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/graphql/upload", &buf)
+	req.Header.Set("Content-Type", "multipart/form-data; boundary="+writer.Boundary())
+	rr := httptest.NewRecorder()
+	GraphqlUploadHandler(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for missing operations, got %d", rr.Code)
+	}
+}
+
+// TestGraphqlUploadHandler_MissingMap verifies that GraphqlUploadHandler returns an error
+// when the "map" field is missing in a multipart upload.
+func TestGraphqlUploadHandler_MissingMap(t *testing.T) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	writer.WriteField("operations", `{"query": "{ hello }", "variables": {}}`)
+	// Omit map field.
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/graphql/upload", &buf)
+	req.Header.Set("Content-Type", "multipart/form-data; boundary="+writer.Boundary())
+	rr := httptest.NewRecorder()
+	GraphqlUploadHandler(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for missing map field, got %d", rr.Code)
+	}
+}
+
+// TestSubscriptionHandler_UpgradeFailure simulates a failure in upgrading the HTTP connection to a WebSocket.
+func TestSubscriptionHandler_UpgradeFailure(t *testing.T) {
+	// Override the upgrader to always fail by rejecting the origin.
+	origUpgrader := upgrader
+	defer func() { upgrader = origUpgrader }()
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return false },
+	}
+
+	req := httptest.NewRequest("GET", "/subscription", nil)
+	rr := httptest.NewRecorder()
+	SubscriptionHandler(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for upgrade failure, got %d", rr.Code)
 	}
 }
