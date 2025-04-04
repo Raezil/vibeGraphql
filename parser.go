@@ -95,7 +95,7 @@ func (p *Parser) skipTypeDefinition() Definition {
 	// Skip the "type" keyword.
 	p.nextToken()
 	if p.curToken.Type != IDENT {
-		// Error handling: expected type name.
+		// Expected type name.
 		return nil
 	}
 	typeName := p.curToken.Literal
@@ -103,24 +103,35 @@ func (p *Parser) skipTypeDefinition() Definition {
 
 	// Expect an opening brace.
 	if p.curToken.Type != LBRACE {
-		// Error handling: expected '{'.
 		return nil
 	}
 	p.nextToken() // Skip '{'
 
 	var fields []*Field
+	iterations := 0
+	maxIterations := 10000 // safeguard to prevent infinite loops
+
 	// Parse fields until we hit the closing brace.
 	for p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+		iterations++
+		if iterations > maxIterations {
+			break
+		}
 		field := p.parseField()
 		if field != nil {
 			fields = append(fields, field)
+		} else {
+			// If no field is returned, still advance the token to avoid a freeze.
+			p.nextToken()
 		}
 		if p.curToken.Type == COMMA {
 			p.nextToken()
 		}
 	}
-	p.nextToken() // Skip '}'
-
+	// Skip the closing brace.
+	if p.curToken.Type == RBRACE {
+		p.nextToken()
+	}
 	return &TypeDefinition{
 		Name:   typeName,
 		Fields: fields,
