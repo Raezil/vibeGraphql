@@ -117,7 +117,7 @@ func (p *Parser) skipTypeDefinition() Definition {
 		if iterations > maxIterations {
 			break
 		}
-		field := p.parseField()
+		field := p.parseTypeField()
 		if field != nil {
 			fields = append(fields, field)
 		} else {
@@ -184,6 +184,25 @@ func (p *Parser) parseOperationDefinition() *OperationDefinition {
 		op.SelectionSet = p.parseSelectionSet()
 	}
 	return op
+}
+
+func (p *Parser) parseTypeField() *Field {
+	// Expect an identifier for the field name.
+	if p.curToken.Type != IDENT {
+		return nil
+	}
+	field := &Field{Name: p.curToken.Literal}
+	p.nextToken()
+	// If a colon is present, skip the colon and the type name.
+	if p.curToken.Type == COLON {
+		p.nextToken() // skip ':'
+		// Optionally, capture the type if needed.
+		if p.curToken.Type == IDENT {
+			// p.curToken.Literal is the type name, e.g. "String"
+			p.nextToken() // skip the type name
+		}
+	}
+	return field
 }
 
 func (p *Parser) parseVariableDefinitions() []VariableDefinition {
