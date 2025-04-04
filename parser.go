@@ -111,16 +111,26 @@ func (p *Parser) parseDefinition() Definition {
 	return nil
 }
 
+func (p *Parser) skipTypeAnnotation() {
+	if p.curToken.Type != COLON {
+		return
+	}
+	p.nextToken() // skip the colon
+	// Skip tokens until we reach a COMMA, RBRACE, or EOF.
+	for p.curToken.Type != COMMA && p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+		p.nextToken()
+	}
+}
+
 // skipTypeDefinition advances the parser past a type definition block.
 func (p *Parser) skipTypeDefinition() Definition {
 	// Skip the "type" keyword.
 	p.nextToken()
 	if p.curToken.Type != IDENT {
-		// Expected type name.
-		return nil
+		return nil // Expected a type name.
 	}
 	typeName := p.curToken.Literal
-	p.nextToken() // move past type name
+	p.nextToken() // Move past the type name.
 
 	// Expect an opening brace.
 	if p.curToken.Type != LBRACE {
@@ -131,7 +141,6 @@ func (p *Parser) skipTypeDefinition() Definition {
 	var fields []*Field
 	iterations := 0
 	maxIterations := 10000 // safeguard
-
 	for p.curToken.Type != RBRACE && p.curToken.Type != EOF {
 		iterations++
 		if iterations > maxIterations {
@@ -141,14 +150,16 @@ func (p *Parser) skipTypeDefinition() Definition {
 		if field != nil {
 			fields = append(fields, field)
 		} else {
-			p.nextToken() // Ensure progress.
+			// Always advance to avoid infinite loops.
+			p.nextToken()
 		}
+		// Skip comma separators.
 		if p.curToken.Type == COMMA {
 			p.nextToken()
 		}
 	}
 	if p.curToken.Type == RBRACE {
-		p.nextToken() // Skip '}'
+		p.nextToken() // Skip the closing brace.
 	}
 	return &TypeDefinition{
 		Name:   typeName,
@@ -205,27 +216,23 @@ func (p *Parser) parseOperationDefinition() *OperationDefinition {
 }
 
 func (p *Parser) parseTypeField() *Field {
-	// Ensure the current token is an IDENT for the field name.
+	// Ensure the current token is an IDENT (the field name)
 	if p.curToken.Type != IDENT {
 		return nil
 	}
 	field := &Field{
 		Name: p.curToken.Literal,
 	}
-	p.nextToken() // move past the field name
+	p.nextToken() // Consume the field name
 
 	// If there is an argument list, skip it.
 	if p.curToken.Type == LPAREN {
 		p.skipParenBlock()
 	}
 
-	// If a colon is present, skip it and then skip the entire type annotation.
+	// If a colon is present, skip the type annotation.
 	if p.curToken.Type == COLON {
-		p.nextToken() // skip ':'
-		// Instead of checking for specific token types, skip until a comma, RBRACE, or EOF.
-		for p.curToken.Type != COMMA && p.curToken.Type != RBRACE && p.curToken.Type != EOF {
-			p.nextToken()
-		}
+		p.skipTypeAnnotation()
 	}
 	return field
 }
