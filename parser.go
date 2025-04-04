@@ -23,9 +23,12 @@ func (p *Parser) ParseDocument() *Document {
 	doc := &Document{}
 	for p.curToken.Type != EOF {
 		def := p.parseDefinition()
-		if def != nil {
-			doc.Definitions = append(doc.Definitions, def)
+		if def == nil {
+			// Advance the token to prevent an infinite loop when the definition is not recognized.
+			p.nextToken()
+			continue
 		}
+		doc.Definitions = append(doc.Definitions, def)
 	}
 	return doc
 }
