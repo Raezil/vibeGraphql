@@ -87,6 +87,7 @@ func (v *Value) TokenLiteral() string {
 	return v.Literal
 }
 
+// TypeDefinition represents a GraphQL type definition (e.g. "type Query { ... }").
 type TypeDefinition struct {
 	Name   string
 	Fields []*Field

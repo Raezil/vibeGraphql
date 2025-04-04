@@ -37,35 +37,32 @@ func (p *Parser) ParseDocument() *Document {
 // In parser.go, add:
 
 func (p *Parser) parseTypeDefinition() Definition {
-	// Assume current token is "type".
-	p.nextToken() // Skip the "type" keyword.
+	// Assume the current token is "type"
+	p.nextToken() // Skip "type"
 	if p.curToken.Type != IDENT {
-		// Error handling: expected type name.
+		// Error handling could go here.
 		return nil
 	}
 	typeName := p.curToken.Literal
-	p.nextToken() // Move past the type name.
+	p.nextToken() // Move past type name
 
-	// Expect an opening brace.
+	// Expect an opening brace
 	if p.curToken.Type != LBRACE {
-		// Error handling: expected '{'.
-		return nil
+		return nil // or handle error
 	}
-	p.nextToken() // Skip '{'.
+	p.nextToken() // Skip '{'
 
 	var fields []*Field
-	// Parse all fields until we reach the closing brace.
 	for p.curToken.Type != RBRACE && p.curToken.Type != EOF {
 		field := p.parseField()
 		if field != nil {
 			fields = append(fields, field)
 		}
-		// Optionally skip commas if used.
 		if p.curToken.Type == COMMA {
 			p.nextToken()
 		}
 	}
-	p.nextToken() // Skip '}'.
+	p.nextToken() // Skip '}'
 
 	return &TypeDefinition{
 		Name:   typeName,
@@ -84,9 +81,9 @@ func (p *Parser) parseDefinition() Definition {
 	if p.curToken.Type == LBRACE {
 		return p.parseOperationDefinition()
 	}
-	// Instead of skipping "type" definitions, parse them.
+	// When a "type" keyword is encountered, use skipTypeDefinition to parse it.
 	if p.curToken.Literal == "type" {
-		return p.parseTypeDefinition()
+		return p.skipTypeDefinition()
 	}
 	// If the token isn't recognized, advance and return nil.
 	p.nextToken()
@@ -94,16 +91,39 @@ func (p *Parser) parseDefinition() Definition {
 }
 
 // skipTypeDefinition advances the parser past a type definition block.
-func (p *Parser) skipTypeDefinition() {
+func (p *Parser) skipTypeDefinition() Definition {
 	// Skip the "type" keyword.
 	p.nextToken()
-	// Skip the type name (if present).
-	if p.curToken.Type == IDENT {
-		p.nextToken()
+	if p.curToken.Type != IDENT {
+		// Error handling: expected type name.
+		return nil
 	}
-	// If there's a block starting with '{', skip its entirety.
-	if p.curToken.Type == LBRACE {
-		p.skipBlock()
+	typeName := p.curToken.Literal
+	p.nextToken() // move past type name
+
+	// Expect an opening brace.
+	if p.curToken.Type != LBRACE {
+		// Error handling: expected '{'.
+		return nil
+	}
+	p.nextToken() // Skip '{'
+
+	var fields []*Field
+	// Parse fields until we hit the closing brace.
+	for p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+		field := p.parseField()
+		if field != nil {
+			fields = append(fields, field)
+		}
+		if p.curToken.Type == COMMA {
+			p.nextToken()
+		}
+	}
+	p.nextToken() // Skip '}'
+
+	return &TypeDefinition{
+		Name:   typeName,
+		Fields: fields,
 	}
 }
 
