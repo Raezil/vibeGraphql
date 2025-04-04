@@ -23,41 +23,69 @@ func (p *Parser) ParseDocument() *Document {
 	doc := &Document{}
 	for p.curToken.Type != EOF {
 		def := p.parseDefinition()
-		if def == nil {
-			// If no definition is returned, force token advancement to avoid infinite loops.
-			p.nextToken()
-			continue
+		if def != nil {
+			doc.Definitions = append(doc.Definitions, def)
 		}
-		doc.Definitions = append(doc.Definitions, def)
+		// Always advance at least one token to ensure progress.
+		if p.curToken.Type != EOF {
+			p.nextToken()
+		}
 	}
 	return doc
 }
 
 func (p *Parser) parseDefinition() Definition {
-	// If the token starts an operation definition, handle it.
+	// Handle explicit operation definitions.
 	if p.curToken.Literal == "query" ||
 		p.curToken.Literal == "mutation" ||
 		p.curToken.Literal == "subscription" {
 		return p.parseOperationDefinition()
 	}
-	// Also allow implicit queries.
+	// Handle implicit queries (starting with '{').
 	if p.curToken.Type == LBRACE {
 		return p.parseOperationDefinition()
 	}
+	// If we see a "type" keyword, skip the type definition.
+	if p.curToken.Literal == "type" {
+		p.skipTypeDefinition()
+		return nil
+	}
+	// If the token isn't recognized, advance and return nil.
+	p.nextToken()
+	return nil
+}
 
-	// For any other token (e.g. "type" from SDL type definitions), skip tokens until we find one that might start an operation.
+// skipTypeDefinition advances the parser past a type definition block.
+func (p *Parser) skipTypeDefinition() {
+	// Skip the "type" keyword.
+	p.nextToken()
+	// Skip the type name (if present).
+	if p.curToken.Type == IDENT {
+		p.nextToken()
+	}
+	// If there's a block starting with '{', skip its entirety.
+	if p.curToken.Type == LBRACE {
+		p.skipBlock()
+	}
+}
+
+// skipBlock skips over a block delimited by '{' and '}'.
+func (p *Parser) skipBlock() {
+	// Assume the current token is LBRACE.
+	depth := 0
 	for p.curToken.Type != EOF {
-		// If we encounter a token that could begin an operation, break out so that ParseDocument can try again.
-		if p.curToken.Literal == "query" ||
-			p.curToken.Literal == "mutation" ||
-			p.curToken.Literal == "subscription" ||
-			p.curToken.Type == LBRACE {
-			break
+		if p.curToken.Type == LBRACE {
+			depth++
+		} else if p.curToken.Type == RBRACE {
+			depth--
+			if depth == 0 {
+				// Move past the closing brace and exit.
+				p.nextToken()
+				return
+			}
 		}
 		p.nextToken()
 	}
-	// Returning nil tells the caller that no definition was parsed.
-	return nil
 }
 
 func (p *Parser) parseOperationDefinition() *OperationDefinition {
