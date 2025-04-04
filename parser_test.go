@@ -230,3 +230,117 @@ func TestParseOperationDefinition(t *testing.T) {
 		t.Errorf("expected field name 'hello', got %s", field.Name)
 	}
 }
+
+func TestParseTypeDefinition(t *testing.T) {
+	input := `type MyType { field1: Int, field2: String }`
+	l := NewLexer(input)
+	p := NewParser(l)
+	doc := p.ParseDocument()
+
+	if len(doc.Definitions) != 1 {
+		t.Fatalf("expected 1 definition, got %d", len(doc.Definitions))
+	}
+
+	td, ok := doc.Definitions[0].(*TypeDefinition)
+	if !ok {
+		t.Fatalf("expected TypeDefinition, got %T", doc.Definitions[0])
+	}
+
+	if td.Name != "MyType" {
+		t.Errorf("expected type name 'MyType', got %s", td.Name)
+	}
+
+	if len(td.Fields) != 2 {
+		t.Errorf("expected 2 fields, got %d", len(td.Fields))
+	}
+
+	if td.Fields[0].Name != "field1" {
+		t.Errorf("expected first field to be 'field1', got %s", td.Fields[0].Name)
+	}
+
+	if td.Fields[1].Name != "field2" {
+		t.Errorf("expected second field to be 'field2', got %s", td.Fields[1].Name)
+	}
+}
+
+func TestSkipParenBlock(t *testing.T) {
+	// The input starts with a parenthesized block followed by an identifier.
+	input := `(arg1: Int, arg2: String) nextToken`
+	l := NewLexer(input)
+	p := NewParser(l)
+
+	// Before calling skipParenBlock, the current token should be LPAREN.
+	if p.curToken.Type != LPAREN {
+		t.Fatalf("expected current token to be LPAREN, got %s", p.curToken.Type)
+	}
+
+	p.skipParenBlock()
+
+	// After skipping, we expect the next token to be an IDENT with literal "nextToken".
+	if p.curToken.Type != IDENT || p.curToken.Literal != "nextToken" {
+		t.Fatalf("expected token IDENT 'nextToken' after skipping paren block, got %s (%s)",
+			p.curToken.Type, p.curToken.Literal)
+	}
+}
+
+func TestSkipBlock(t *testing.T) {
+	// The input has a block followed by an identifier.
+	input := `{ field1: Int } nextToken`
+	l := NewLexer(input)
+	p := NewParser(l)
+
+	// Before calling skipBlock, current token should be LBRACE.
+	if p.curToken.Type != LBRACE {
+		t.Fatalf("expected current token to be LBRACE, got %s", p.curToken.Type)
+	}
+
+	p.skipBlock()
+
+	// After skipping, the current token should be IDENT with literal "nextToken".
+	if p.curToken.Type != IDENT || p.curToken.Literal != "nextToken" {
+		t.Fatalf("expected token IDENT 'nextToken' after skipping block, got %s (%s)",
+			p.curToken.Type, p.curToken.Literal)
+	}
+}
+
+func TestParseType(t *testing.T) {
+	// Test a simple type: Int!
+	input := `Int!`
+	l := NewLexer(input)
+	p := NewParser(l)
+	typ := p.parseType()
+	if typ == nil {
+		t.Fatalf("expected non-nil type")
+	}
+	if typ.Name != "Int" {
+		t.Errorf("expected type name 'Int', got %s", typ.Name)
+	}
+	if !typ.NonNull {
+		t.Errorf("expected type to be non-null")
+	}
+
+	// Test a list type: [String!]!
+	input = `[String!]!`
+	l = NewLexer(input)
+	p = NewParser(l)
+	typ = p.parseType()
+	if typ == nil {
+		t.Fatalf("expected non-nil type")
+	}
+	if !typ.IsList {
+		t.Errorf("expected type to be a list")
+	}
+	if !typ.NonNull {
+		t.Errorf("expected list type to be non-null")
+	}
+	if typ.Elem == nil {
+		t.Errorf("expected list element type, got nil")
+	} else {
+		if typ.Elem.Name != "String" {
+			t.Errorf("expected element type name 'String', got %s", typ.Elem.Name)
+		}
+		if !typ.Elem.NonNull {
+			t.Errorf("expected element type to be non-null")
+		}
+	}
+}
