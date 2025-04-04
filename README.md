@@ -23,9 +23,9 @@ go get github.com/Raezil/vibeGraphql
 ### 2. Define Your Schema and Resolvers
 
 ```go
-graphql.RegisterQueryResolver("user", userResolver)
-graphql.RegisterMutationResolver("updateUser", updateUserResolver)
-graphql.RegisterSubscriptionResolver("userSubscription", userSubscriptionResolver)
+if err := RegisterResolversFromSDL("schema.graphql"); err != nil {
+	log.Fatalf("Failed to register resolvers: %v", err)
+}
 ```
 
 ### 3. Start HTTP Server
