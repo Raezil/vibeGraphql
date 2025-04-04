@@ -54,12 +54,152 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	graphql "github.com/Raezil/vibeGraphql"
 )
+
+// schemaDocument holds the parsed SDL document (if needed for further processing).
+var schemaDocument *graphql.Document
+
+// LoadSchemaSDL reads the SDL file from disk, lexes/parses it into a Document,
+// and stores it in the package-level variable. (You can extend this to further
+// process or validate the schema as needed.)
+func LoadSchemaSDL(filePath string) error {
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read SDL file %q: %v", filePath, err)
+	}
+	// Optionally, you can parse the SDL with your Lexer/Parser:
+	lexer := graphql.NewLexer(string(data))
+	parser := graphql.NewParser(lexer)
+	doc := parser.ParseDocument()
+	schemaDocument = doc
+
+	fmt.Printf("Loaded SDL with %d definitions\n", len(doc.Definitions))
+	return nil
+}
+
+// RegisterResolversFromSDL loads the SDL file and registers resolvers
+// for the fields defined in the Query, Mutation, and Subscription types.
+// It uses a very simple parser based on string scanning for demonstration.
+// In a production system you might build a full type definition parser.
+func RegisterResolversFromSDL(filePath string) error {
+	// Load the SDL file.
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read SDL file %q: %v", filePath, err)
+	}
+	content := string(data)
+
+	// Optionally, also load the SDL into the full Document for introspection.
+	if err := LoadSchemaSDL(filePath); err != nil {
+		return err
+	}
+
+	// A helper function that finds a type block and extracts field names.
+	parseTypeBlock := func(typeName string) ([]string, error) {
+		searchStr := "type " + typeName
+		idx := strings.Index(content, searchStr)
+		if idx == -1 {
+			// Type not defined in SDL.
+			return nil, nil
+		}
+		// Find the opening brace '{'
+		braceIdx := strings.Index(content[idx:], "{")
+		if braceIdx == -1 {
+			return nil, fmt.Errorf("no opening brace found for type %s", typeName)
+		}
+		braceIdx += idx
+		// Find the matching closing brace '}'.
+		count := 0
+		endIdx := -1
+		for i := braceIdx; i < len(content); i++ {
+			if content[i] == '{' {
+				count++
+			} else if content[i] == '}' {
+				count--
+				if count == 0 {
+					endIdx = i
+					break
+				}
+			}
+		}
+		if endIdx == -1 {
+			return nil, fmt.Errorf("no closing brace found for type %s", typeName)
+		}
+		block := content[braceIdx+1 : endIdx]
+		// Extract field names. We assume one field per line.
+		lines := strings.Split(block, "\n")
+		var fields []string
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			// The field name is the first token (delimited by space, '(' or ':').
+			fieldName := ""
+			for i, ch := range line {
+				if ch == ' ' || ch == '(' || ch == ':' {
+					fieldName = line[:i]
+					break
+				}
+			}
+			if fieldName == "" {
+				fieldName = line
+			}
+			fields = append(fields, fieldName)
+		}
+		return fields, nil
+	}
+
+	// Map of available resolvers keyed by field name.
+	availableResolvers := map[string]graphql.ResolverFunc{
+		"user":        userResolver,
+		"users":       usersResolver,
+		"updateUser":  updateUserResolver,
+		"uploadFiles": uploadFilesResolver,
+		"userUpdates": userSubscriptionResolver,
+	}
+
+	// Register resolvers for each operation type.
+	registerForType := func(typeName string, registerFunc func(string, graphql.ResolverFunc), resolverMap map[string]graphql.ResolverFunc) error {
+		fields, err := parseTypeBlock(typeName)
+		if err != nil {
+			return err
+		}
+		for _, field := range fields {
+			if resolver, ok := resolverMap[field]; ok {
+				registerFunc(field, resolver)
+				fmt.Printf("Registered resolver for %s.%s\n", typeName, field)
+			} else {
+				fmt.Printf("No resolver found for %s.%s; skipping\n", typeName, field)
+			}
+		}
+		return nil
+	}
+
+	// Register Query resolvers.
+	if err := registerForType("Query", graphql.RegisterQueryResolver, availableResolvers); err != nil {
+		return err
+	}
+
+	// Register Mutation resolvers.
+	if err := registerForType("Mutation", graphql.RegisterMutationResolver, availableResolvers); err != nil {
+		return err
+	}
+
+	// Register Subscription resolvers.
+	if err := registerForType("Subscription", graphql.RegisterSubscriptionResolver, availableResolvers); err != nil {
+		return err
+	}
+
+	fmt.Println("Resolvers registered from SDL successfully.")
+	return nil
+}
 
 // User represents a sample user.
 type User struct {
@@ -71,8 +211,14 @@ type User struct {
 
 var (
 	userStore = map[string]*User{
-		"123": {ID: "123", Name: "John Doe", Age: 30},
+		"123": {ID: "123", Name: "John Doe", Age: 30, Friends: []*User{
+			{ID: "456", Name: "Jane Smith", Age: 25, Friends: []*User{
+				{ID: "789", Name: "Bob Johnson", Age: 28},
+			}},
+			{ID: "789", Name: "Bob Johnson", Age: 28},
+		}},
 		"456": {ID: "456", Name: "Jane Smith", Age: 25},
+		"789": {ID: "789", Name: "Bob Johnson", Age: 28},
 	}
 	mu sync.Mutex
 )
@@ -194,11 +340,9 @@ func uploadFilesResolver(source interface{}, args map[string]interface{}) (inter
 }
 
 func main() {
-	graphql.RegisterQueryResolver("user", userResolver)
-	graphql.RegisterQueryResolver("users", usersResolver)
-	graphql.RegisterMutationResolver("updateUser", updateUserResolver)
-	graphql.RegisterMutationResolver("uploadFiles", uploadFilesResolver)
-	graphql.RegisterSubscriptionResolver("userSubscription", userSubscriptionResolver)
+	if err := RegisterResolversFromSDL("schema.graphql"); err != nil {
+		log.Fatalf("Failed to register resolvers: %v", err)
+	}
 
 	// Use the GraphqlUploadHandler for /graphql to support file uploads.
 	mux := http.NewServeMux()
