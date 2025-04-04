@@ -28,7 +28,31 @@ if err := RegisterResolversFromSDL("schema.graphql"); err != nil {
 }
 ```
 
-### 3. Start HTTP Server
+### 3. Define schema.graphql
+```
+type Query {
+  user(id: ID!): User
+  users(ids: [ID!]!): [User]
+}
+
+type Mutation {
+  uploadFiles(files: [FileInput]!): [String]
+  updateUser(id: ID!, name: String!): User
+}
+
+type Subscription {
+  userUpdates: User
+}
+
+type User {
+  id: String!
+  name: String!
+  age: Int!
+}
+```
+
+
+### 4. Start HTTP Server
 
 ```go
 http.HandleFunc("/graphql", graphql.GraphqlHandler)
