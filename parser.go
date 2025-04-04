@@ -95,7 +95,6 @@ func (p *Parser) skipTypeDefinition() Definition {
 	// Skip the "type" keyword.
 	p.nextToken()
 	if p.curToken.Type != IDENT {
-		// Expected type name.
 		return nil
 	}
 	typeName := p.curToken.Literal
@@ -109,28 +108,26 @@ func (p *Parser) skipTypeDefinition() Definition {
 
 	var fields []*Field
 	iterations := 0
-	maxIterations := 10000 // safeguard to prevent infinite loops
+	maxIterations := 10000 // safeguard
 
-	// Parse fields until we hit the closing brace.
 	for p.curToken.Type != RBRACE && p.curToken.Type != EOF {
 		iterations++
 		if iterations > maxIterations {
 			break
 		}
+		// Use parseTypeField() instead of parseField()
 		field := p.parseTypeField()
 		if field != nil {
 			fields = append(fields, field)
 		} else {
-			// If no field is returned, still advance the token to avoid a freeze.
 			p.nextToken()
 		}
 		if p.curToken.Type == COMMA {
 			p.nextToken()
 		}
 	}
-	// Skip the closing brace.
 	if p.curToken.Type == RBRACE {
-		p.nextToken()
+		p.nextToken() // Skip '}'
 	}
 	return &TypeDefinition{
 		Name:   typeName,
@@ -191,15 +188,21 @@ func (p *Parser) parseTypeField() *Field {
 	if p.curToken.Type != IDENT {
 		return nil
 	}
-	field := &Field{Name: p.curToken.Literal}
+	// Create a field with the field name.
+	field := &Field{
+		Name: p.curToken.Literal,
+	}
 	p.nextToken()
-	// If a colon is present, skip the colon and the type name.
+	// If there's a colon, skip it and then skip the type tokens.
 	if p.curToken.Type == COLON {
 		p.nextToken() // skip ':'
-		// Optionally, capture the type if needed.
-		if p.curToken.Type == IDENT {
-			// p.curToken.Literal is the type name, e.g. "String"
-			p.nextToken() // skip the type name
+		// Skip tokens that form the type definition.
+		// This simplistic approach assumes type is a sequence of IDENT, LBRACKET, RBRACKET, BANG tokens.
+		for p.curToken.Type == IDENT ||
+			p.curToken.Type == LBRACKET ||
+			p.curToken.Type == RBRACKET ||
+			p.curToken.Type == BANG {
+			p.nextToken()
 		}
 	}
 	return field
