@@ -75,17 +75,13 @@ func (p *Parser) skipParenBlock() {
 	if p.curToken.Type != LPAREN {
 		return
 	}
-	depth := 0
-	for p.curToken.Type != EOF {
+	depth := 1
+	p.nextToken() // Skip the opening '('
+	for depth > 0 && p.curToken.Type != EOF {
 		if p.curToken.Type == LPAREN {
 			depth++
 		} else if p.curToken.Type == RPAREN {
 			depth--
-			p.nextToken()
-			if depth == 0 {
-				return
-			}
-			continue
 		}
 		p.nextToken()
 	}
@@ -115,8 +111,8 @@ func (p *Parser) skipTypeAnnotation() {
 	if p.curToken.Type != COLON {
 		return
 	}
-	p.nextToken() // skip the colon
-	// Skip tokens until we reach a COMMA, RBRACE, or EOF.
+	p.nextToken() // Skip the colon
+	// Skip tokens until we hit a comma, a closing brace, or EOF.
 	for p.curToken.Type != COMMA && p.curToken.Type != RBRACE && p.curToken.Type != EOF {
 		p.nextToken()
 	}
@@ -130,7 +126,7 @@ func (p *Parser) skipTypeDefinition() Definition {
 		return nil // Expected a type name.
 	}
 	typeName := p.curToken.Literal
-	p.nextToken() // Move past the type name.
+	p.nextToken() // Move past type name.
 
 	// Expect an opening brace.
 	if p.curToken.Type != LBRACE {
@@ -141,6 +137,7 @@ func (p *Parser) skipTypeDefinition() Definition {
 	var fields []*Field
 	iterations := 0
 	maxIterations := 10000 // safeguard
+
 	for p.curToken.Type != RBRACE && p.curToken.Type != EOF {
 		iterations++
 		if iterations > maxIterations {
@@ -150,10 +147,9 @@ func (p *Parser) skipTypeDefinition() Definition {
 		if field != nil {
 			fields = append(fields, field)
 		} else {
-			// Always advance to avoid infinite loops.
+			// If no field is returned, advance token to ensure progress.
 			p.nextToken()
 		}
-		// Skip comma separators.
 		if p.curToken.Type == COMMA {
 			p.nextToken()
 		}
@@ -216,7 +212,7 @@ func (p *Parser) parseOperationDefinition() *OperationDefinition {
 }
 
 func (p *Parser) parseTypeField() *Field {
-	// Ensure the current token is an IDENT (the field name)
+	// Ensure the current token is an IDENT for the field name.
 	if p.curToken.Type != IDENT {
 		return nil
 	}
