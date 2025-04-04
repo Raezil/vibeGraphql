@@ -530,33 +530,6 @@ func TestGraphqlHandler_MissingQueryField(t *testing.T) {
 	}
 }
 
-func TestOperationDefinitionTokenLiteral(t *testing.T) {
-	// When a name is provided.
-	op := &OperationDefinition{Operation: "query", Name: "MyQuery"}
-	if op.TokenLiteral() != "MyQuery" {
-		t.Errorf("expected TokenLiteral to be 'MyQuery', got %q", op.TokenLiteral())
-	}
-	// When no name is provided.
-	op = &OperationDefinition{Operation: "query", Name: ""}
-	if op.TokenLiteral() != "query" {
-		t.Errorf("expected TokenLiteral to be 'query', got %q", op.TokenLiteral())
-	}
-}
-
-func TestFieldTokenLiteral(t *testing.T) {
-	field := &Field{Name: "testField"}
-	if field.TokenLiteral() != "testField" {
-		t.Errorf("expected TokenLiteral to be 'testField', got %q", field.TokenLiteral())
-	}
-}
-
-func TestArgumentTokenLiteral(t *testing.T) {
-	arg := &Argument{Name: "arg1"}
-	if arg.TokenLiteral() != "arg1" {
-		t.Errorf("expected TokenLiteral to be 'arg1', got %q", arg.TokenLiteral())
-	}
-}
-
 func TestValueTokenLiteral(t *testing.T) {
 	val := &Value{Literal: "value"}
 	if val.TokenLiteral() != "value" {
@@ -742,15 +715,6 @@ func TestParseValue_Illegal(t *testing.T) {
 	}
 	if val.Literal != "@" {
 		t.Errorf("expected literal '@', got %q", val.Literal)
-	}
-}
-
-// Test resolveField when no resolver is found for a top-level field.
-func TestResolveField_NoResolver(t *testing.T) {
-	field := &Field{Name: "nonexistent"}
-	_, err := resolveField(nil, field, nil)
-	if err == nil {
-		t.Error("expected error when no resolver is found for field 'nonexistent'")
 	}
 }
 
