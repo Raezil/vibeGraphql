@@ -107,13 +107,42 @@ func (p *Parser) parseDefinition() Definition {
 	return nil
 }
 
+// skipTypeAnnotation assumes the current token is COLON and skips a type annotation.
+// It handles simple and list types.
 func (p *Parser) skipTypeAnnotation() {
 	if p.curToken.Type != COLON {
 		return
 	}
 	p.nextToken() // Skip the colon
-	// Skip tokens until we hit a comma, a closing brace, or EOF.
-	for p.curToken.Type != COMMA && p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+
+	// Check for list type: if the annotation starts with '['.
+	if p.curToken.Type == LBRACKET {
+		// Consume '['
+		p.nextToken()
+		// Consume the inner type (which we assume is a simple type)
+		if p.curToken.Type == IDENT {
+			p.nextToken()
+			// Optionally skip a trailing BANG for the inner type.
+			if p.curToken.Type == BANG {
+				p.nextToken()
+			}
+		}
+		// Expect a closing bracket.
+		if p.curToken.Type == RBRACKET {
+			p.nextToken()
+		}
+		// Optionally, skip a trailing BANG for the list type.
+		if p.curToken.Type == BANG {
+			p.nextToken()
+		}
+		return
+	}
+
+	// Otherwise, assume a simple type: one IDENT, optionally followed by a BANG.
+	if p.curToken.Type == IDENT {
+		p.nextToken()
+	}
+	if p.curToken.Type == BANG {
 		p.nextToken()
 	}
 }
@@ -126,7 +155,7 @@ func (p *Parser) skipTypeDefinition() Definition {
 		return nil // Expected a type name.
 	}
 	typeName := p.curToken.Literal
-	p.nextToken() // Move past type name.
+	p.nextToken() // Move past the type name.
 
 	// Expect an opening brace.
 	if p.curToken.Type != LBRACE {
@@ -137,7 +166,6 @@ func (p *Parser) skipTypeDefinition() Definition {
 	var fields []*Field
 	iterations := 0
 	maxIterations := 10000 // safeguard
-
 	for p.curToken.Type != RBRACE && p.curToken.Type != EOF {
 		iterations++
 		if iterations > maxIterations {
@@ -147,7 +175,7 @@ func (p *Parser) skipTypeDefinition() Definition {
 		if field != nil {
 			fields = append(fields, field)
 		} else {
-			// If no field is returned, advance token to ensure progress.
+			// Advance token to ensure progress.
 			p.nextToken()
 		}
 		if p.curToken.Type == COMMA {
@@ -212,7 +240,7 @@ func (p *Parser) parseOperationDefinition() *OperationDefinition {
 }
 
 func (p *Parser) parseTypeField() *Field {
-	// Ensure the current token is an IDENT for the field name.
+	// Expect an IDENT for the field name.
 	if p.curToken.Type != IDENT {
 		return nil
 	}
@@ -221,7 +249,7 @@ func (p *Parser) parseTypeField() *Field {
 	}
 	p.nextToken() // Consume the field name
 
-	// If there is an argument list, skip it.
+	// If there's an argument list, skip it.
 	if p.curToken.Type == LPAREN {
 		p.skipParenBlock()
 	}
