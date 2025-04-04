@@ -26,10 +26,11 @@ func (p *Parser) ParseDocument() *Document {
 		if def != nil {
 			doc.Definitions = append(doc.Definitions, def)
 		}
-		// Always advance at least one token to ensure progress.
-		if p.curToken.Type != EOF {
-			p.nextToken()
-		}
+		// Optionally, only advance if parseDefinition did not advance.
+		// (Remove or comment out the following unconditional advancement.)
+		// if p.curToken.Type != EOF {
+		//     p.nextToken()
+		// }
 	}
 	return doc
 }
