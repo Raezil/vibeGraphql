@@ -42,6 +42,8 @@ func (p *Parser) parseDefinition() Definition {
 		// implicit query
 		return p.parseOperationDefinition()
 	}
+	// Unknown definition; skip this token.
+	p.nextToken()
 	return nil
 }
 
