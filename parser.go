@@ -24,7 +24,7 @@ func (p *Parser) ParseDocument() *Document {
 	for p.curToken.Type != EOF {
 		def := p.parseDefinition()
 		if def == nil {
-			// Advance the token to prevent an infinite loop when the definition is not recognized.
+			// If no definition is returned, force token advancement to avoid infinite loops.
 			p.nextToken()
 			continue
 		}
@@ -34,16 +34,29 @@ func (p *Parser) ParseDocument() *Document {
 }
 
 func (p *Parser) parseDefinition() Definition {
+	// If the token starts an operation definition, handle it.
 	if p.curToken.Literal == "query" ||
 		p.curToken.Literal == "mutation" ||
 		p.curToken.Literal == "subscription" {
 		return p.parseOperationDefinition()
-	} else if p.curToken.Type == LBRACE {
-		// implicit query
+	}
+	// Also allow implicit queries.
+	if p.curToken.Type == LBRACE {
 		return p.parseOperationDefinition()
 	}
-	// Unknown definition; skip this token.
-	p.nextToken()
+
+	// For any other token (e.g. "type" from SDL type definitions), skip tokens until we find one that might start an operation.
+	for p.curToken.Type != EOF {
+		// If we encounter a token that could begin an operation, break out so that ParseDocument can try again.
+		if p.curToken.Literal == "query" ||
+			p.curToken.Literal == "mutation" ||
+			p.curToken.Literal == "subscription" ||
+			p.curToken.Type == LBRACE {
+			break
+		}
+		p.nextToken()
+	}
+	// Returning nil tells the caller that no definition was parsed.
 	return nil
 }
 
