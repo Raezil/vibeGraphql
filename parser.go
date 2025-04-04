@@ -129,28 +129,25 @@ func (p *Parser) skipTypeDefinition() Definition {
 
 	var fields []*Field
 	iterations := 0
-	maxIterations := 10000 // safeguard to prevent infinite loops
+	maxIterations := 10000 // safeguard
 
 	for p.curToken.Type != RBRACE && p.curToken.Type != EOF {
 		iterations++
 		if iterations > maxIterations {
 			break
 		}
-		// Use parseTypeField() to get only the field name.
 		field := p.parseTypeField()
 		if field != nil {
 			fields = append(fields, field)
 		} else {
-			// Advance token to avoid freezing.
-			p.nextToken()
+			p.nextToken() // Ensure progress.
 		}
 		if p.curToken.Type == COMMA {
 			p.nextToken()
 		}
 	}
-	// Skip the closing brace.
 	if p.curToken.Type == RBRACE {
-		p.nextToken()
+		p.nextToken() // Skip '}'
 	}
 	return &TypeDefinition{
 		Name:   typeName,
@@ -221,14 +218,11 @@ func (p *Parser) parseTypeField() *Field {
 		p.skipParenBlock()
 	}
 
-	// If a colon is present, skip it and then skip type annotation tokens.
+	// If a colon is present, skip it and then skip the entire type annotation.
 	if p.curToken.Type == COLON {
 		p.nextToken() // skip ':'
-		// Skip tokens that belong to the type annotation.
-		for p.curToken.Type == IDENT ||
-			p.curToken.Type == LBRACKET ||
-			p.curToken.Type == RBRACKET ||
-			p.curToken.Type == BANG {
+		// Instead of checking for specific token types, skip until a comma, RBRACE, or EOF.
+		for p.curToken.Type != COMMA && p.curToken.Type != RBRACE && p.curToken.Type != EOF {
 			p.nextToken()
 		}
 	}
