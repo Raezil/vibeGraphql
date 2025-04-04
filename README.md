@@ -11,7 +11,7 @@ It was vibe coded using ChatGPT o3 model.
 - 🛠️ **Mutation resolvers** for updating data  
 - 📡 **Subscription resolvers** for real-time updates  
 - 🧵 Thread-safe in-memory data handling
-- multiple files uploader
+- 📂 Multiple files uploader, alike apollo uploader
 - 🔌 Simple HTTP handler integration (`/graphql` and `/subscriptions`)  
 
 ---
