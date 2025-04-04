@@ -86,3 +86,12 @@ type Value struct {
 func (v *Value) TokenLiteral() string {
 	return v.Literal
 }
+
+type TypeDefinition struct {
+	Name   string
+	Fields []*Field
+}
+
+func (t *TypeDefinition) TokenLiteral() string {
+	return t.Name
+}

@@ -34,8 +34,47 @@ func (p *Parser) ParseDocument() *Document {
 	return doc
 }
 
+// In parser.go, add:
+
+func (p *Parser) parseTypeDefinition() Definition {
+	// Assume current token is "type".
+	p.nextToken() // Skip the "type" keyword.
+	if p.curToken.Type != IDENT {
+		// Error handling: expected type name.
+		return nil
+	}
+	typeName := p.curToken.Literal
+	p.nextToken() // Move past the type name.
+
+	// Expect an opening brace.
+	if p.curToken.Type != LBRACE {
+		// Error handling: expected '{'.
+		return nil
+	}
+	p.nextToken() // Skip '{'.
+
+	var fields []*Field
+	// Parse all fields until we reach the closing brace.
+	for p.curToken.Type != RBRACE && p.curToken.Type != EOF {
+		field := p.parseField()
+		if field != nil {
+			fields = append(fields, field)
+		}
+		// Optionally skip commas if used.
+		if p.curToken.Type == COMMA {
+			p.nextToken()
+		}
+	}
+	p.nextToken() // Skip '}'.
+
+	return &TypeDefinition{
+		Name:   typeName,
+		Fields: fields,
+	}
+}
+
 func (p *Parser) parseDefinition() Definition {
-	// Handle explicit operation definitions.
+	// Handle operation definitions.
 	if p.curToken.Literal == "query" ||
 		p.curToken.Literal == "mutation" ||
 		p.curToken.Literal == "subscription" {
@@ -45,10 +84,9 @@ func (p *Parser) parseDefinition() Definition {
 	if p.curToken.Type == LBRACE {
 		return p.parseOperationDefinition()
 	}
-	// If we see a "type" keyword, skip the type definition.
+	// Instead of skipping "type" definitions, parse them.
 	if p.curToken.Literal == "type" {
-		p.skipTypeDefinition()
-		return nil
+		return p.parseTypeDefinition()
 	}
 	// If the token isn't recognized, advance and return nil.
 	p.nextToken()
