@@ -104,7 +104,6 @@ func LoadSchemaSDL(filePath string) error {
 	parser := graphql.NewParser(lexer)
 	doc := parser.ParseDocument()
 	schemaDocument = doc
-	fmt.Printf("Loaded SDL with %d definitions\n", len(doc.Definitions))
 	return nil
 }
 
